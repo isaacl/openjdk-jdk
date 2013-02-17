@@ -72,7 +72,10 @@ import static java.time.temporal.ChronoUnit.YEARS;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.format.DateTimeBuilder;
+import java.time.chrono.Chronology;
+import java.time.chrono.IsoChronology;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Fields and units specific to the ISO-8601 calendar system,
@@ -143,7 +146,7 @@ import java.time.format.DateTimeBuilder;
  *
  * @since 1.8
  */
-public final class ISOFields {
+public final class IsoFields {
 
     /**
      * The field that represents the day-of-quarter.
@@ -216,7 +219,7 @@ public final class ISOFields {
     /**
      * Restricted constructor.
      */
-    private ISOFields() {
+    private IsoFields() {
         throw new AssertionError("Not instantiable");
     }
 
@@ -243,19 +246,19 @@ public final class ISOFields {
                 return ValueRange.of(1, 90, 92);
             }
             @Override
-            public boolean doIsSupported(TemporalAccessor temporal) {
+            public boolean isSupportedBy(TemporalAccessor temporal) {
                 return temporal.isSupported(DAY_OF_YEAR) && temporal.isSupported(MONTH_OF_YEAR) &&
-                        temporal.isSupported(YEAR) && Chrono.from(temporal).equals(ISOChrono.INSTANCE);
+                        temporal.isSupported(YEAR) && isIso(temporal);
             }
             @Override
-            public ValueRange doRange(TemporalAccessor temporal) {
-                if (doIsSupported(temporal) == false) {
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
                     throw new DateTimeException("Unsupported field: DayOfQuarter");
                 }
                 long qoy = temporal.getLong(QUARTER_OF_YEAR);
                 if (qoy == 1) {
                     long year = temporal.getLong(YEAR);
-                    return (ISOChrono.INSTANCE.isLeapYear(year) ? ValueRange.of(1, 91) : ValueRange.of(1, 90));
+                    return (IsoChronology.INSTANCE.isLeapYear(year) ? ValueRange.of(1, 91) : ValueRange.of(1, 90));
                 } else if (qoy == 2) {
                     return ValueRange.of(1, 91);
                 } else if (qoy == 3 || qoy == 4) {
@@ -264,20 +267,37 @@ public final class ISOFields {
                 return range();
             }
             @Override
-            public long doGet(TemporalAccessor temporal) {
-                if (doIsSupported(temporal) == false) {
+            public long getFrom(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
                     throw new DateTimeException("Unsupported field: DayOfQuarter");
                 }
                 int doy = temporal.get(DAY_OF_YEAR);
                 int moy = temporal.get(MONTH_OF_YEAR);
                 long year = temporal.getLong(YEAR);
-                return doy - QUARTER_DAYS[((moy - 1) / 3) + (ISOChrono.INSTANCE.isLeapYear(year) ? 4 : 0)];
+                return doy - QUARTER_DAYS[((moy - 1) / 3) + (IsoChronology.INSTANCE.isLeapYear(year) ? 4 : 0)];
+            }
+            @SuppressWarnings("unchecked")
+            @Override
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                // calls getFrom() to check if supported
+                long curValue = getFrom(temporal);
+                range().checkValidValue(newValue, this);  // leniently check from 1 to 92 TODO: check
+                return (R) temporal.with(DAY_OF_YEAR, temporal.getLong(DAY_OF_YEAR) + (newValue - curValue));
             }
             @Override
-            public <R extends Temporal> R doWith(R temporal, long newValue) {
-                long curValue = doGet(temporal);
-                range().checkValidValue(newValue, this);
-                return (R) temporal.with(DAY_OF_YEAR, temporal.getLong(DAY_OF_YEAR) + (newValue - curValue));
+            public Map<TemporalField, Long> resolve(TemporalAccessor temporal, long value) {
+                if ((temporal.isSupported(YEAR) && temporal.isSupported(DAY_OF_QUARTER)) == false) {
+                    return null;
+                }
+                int y = temporal.get(YEAR);
+                int qoy = temporal.get(QUARTER_OF_YEAR);
+                range().checkValidValue(value, this);  // leniently check from 1 to 92 TODO: check
+                LocalDate date = LocalDate.of(y, ((qoy - 1) * 3) + 1, 1).plusDays(value - 1);
+                Map<TemporalField, Long> result = new HashMap<>(4, 1.0f);
+                result.put(EPOCH_DAY, date.toEpochDay());
+                result.put(YEAR, null);
+                result.put(QUARTER_OF_YEAR, null);
+                return result;
             }
         },
         QUARTER_OF_YEAR {
@@ -298,35 +318,24 @@ public final class ISOFields {
                 return ValueRange.of(1, 4);
             }
             @Override
-            public boolean doIsSupported(TemporalAccessor temporal) {
-                return temporal.isSupported(MONTH_OF_YEAR) && Chrono.from(temporal).equals(ISOChrono.INSTANCE);
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                return temporal.isSupported(MONTH_OF_YEAR) && isIso(temporal);
             }
             @Override
-            public long doGet(TemporalAccessor temporal) {
-                if (doIsSupported(temporal) == false) {
-                    throw new DateTimeException("Unsupported field: DayOfQuarter");
+            public long getFrom(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
+                    throw new DateTimeException("Unsupported field: QuarterOfYear");
                 }
                 long moy = temporal.getLong(MONTH_OF_YEAR);
                 return ((moy + 2) / 3);
             }
+            @SuppressWarnings("unchecked")
             @Override
-            public <R extends Temporal> R doWith(R temporal, long newValue) {
-                long curValue = doGet(temporal);
-                range().checkValidValue(newValue, this);
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                // calls getFrom() to check if supported
+                long curValue = getFrom(temporal);
+                range().checkValidValue(newValue, this);  // strictly check from 1 to 4
                 return (R) temporal.with(MONTH_OF_YEAR, temporal.getLong(MONTH_OF_YEAR) + (newValue - curValue) * 3);
-            }
-            @Override
-            public boolean resolve(DateTimeBuilder builder, long value) {
-                Long[] values = builder.queryFieldValues(YEAR, QUARTER_OF_YEAR, DAY_OF_QUARTER);
-                if (values[0] != null && values[1] != null && values[2] != null) {
-                    int y = YEAR.range().checkValidIntValue(values[0], YEAR);
-                    int qoy = QUARTER_OF_YEAR.range().checkValidIntValue(values[1], QUARTER_OF_YEAR);
-                    int doq = DAY_OF_QUARTER.range().checkValidIntValue(values[2], DAY_OF_QUARTER);
-                    LocalDate date = LocalDate.of(y, ((qoy - 1) * 3) + 1, 1).plusDays(doq - 1);
-                    builder.addFieldValue(EPOCH_DAY, date.toEpochDay());
-                    builder.removeFieldValues(QUARTER_OF_YEAR, DAY_OF_QUARTER);
-                }
-                return false;
             }
         },
         WEEK_OF_WEEK_BASED_YEAR {
@@ -347,21 +356,44 @@ public final class ISOFields {
                 return ValueRange.of(1, 52, 53);
             }
             @Override
-            public boolean doIsSupported(TemporalAccessor temporal) {
-                return temporal.isSupported(EPOCH_DAY);
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                return temporal.isSupported(EPOCH_DAY) && isIso(temporal);
             }
             @Override
-            public ValueRange doRange(TemporalAccessor temporal) {
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
+                    throw new DateTimeException("Unsupported field: WeekOfWeekBasedYear");
+                }
                 return getWeekRange(LocalDate.from(temporal));
             }
             @Override
-            public long doGet(TemporalAccessor temporal) {
+            public long getFrom(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
+                    throw new DateTimeException("Unsupported field: WeekOfWeekBasedYear");
+                }
                 return getWeek(LocalDate.from(temporal));
             }
+            @SuppressWarnings("unchecked")
             @Override
-            public <R extends Temporal> R doWith(R temporal, long newValue) {
-                ValueRange.of(1, 53).checkValidValue(newValue, this);
-                return (R) temporal.plus(Math.subtractExact(newValue, doGet(temporal)), WEEKS);
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                // calls getFrom() to check if supported
+                range().checkValidValue(newValue, this);  // lenient range
+                return (R) temporal.plus(Math.subtractExact(newValue, getFrom(temporal)), WEEKS);
+            }
+            @Override
+            public Map<TemporalField, Long> resolve(TemporalAccessor temporal, long value) {
+                if ((temporal.isSupported(WEEK_BASED_YEAR) && temporal.isSupported(DAY_OF_WEEK)) == false) {
+                    return null;
+                }
+                int wby = temporal.get(WEEK_BASED_YEAR);
+                int dow = temporal.get(DAY_OF_WEEK);
+                range().checkValidValue(value, this);  // lenient range
+                LocalDate date = LocalDate.of(wby, 1, 4).plusWeeks(value - 1).with(DAY_OF_WEEK, dow);
+                Map<TemporalField, Long> result = new HashMap<>(2, 1.0f);
+                result.put(EPOCH_DAY, date.toEpochDay());
+                result.put(WEEK_BASED_YEAR, null);
+                result.put(DAY_OF_WEEK, null);
+                return result;
             }
         },
         WEEK_BASED_YEAR {
@@ -382,44 +414,33 @@ public final class ISOFields {
                 return YEAR.range();
             }
             @Override
-            public boolean doIsSupported(TemporalAccessor temporal) {
-                return temporal.isSupported(EPOCH_DAY);
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                return temporal.isSupported(EPOCH_DAY) && isIso(temporal);
             }
             @Override
-            public long doGet(TemporalAccessor temporal) {
+            public long getFrom(TemporalAccessor temporal) {
+                if (isSupportedBy(temporal) == false) {
+                    throw new DateTimeException("Unsupported field: WeekBasedYear");
+                }
                 return getWeekBasedYear(LocalDate.from(temporal));
             }
+            @SuppressWarnings("unchecked")
             @Override
-            public <R extends Temporal> R doWith(R temporal, long newValue) {
-                int newVal = range().checkValidIntValue(newValue, WEEK_BASED_YEAR);
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                if (isSupportedBy(temporal) == false) {
+                    throw new DateTimeException("Unsupported field: WeekBasedYear");
+                }
+                int newVal = range().checkValidIntValue(newValue, WEEK_BASED_YEAR);  // strict check
                 LocalDate date = LocalDate.from(temporal);
                 int week = getWeek(date);
                 date = date.withDayOfYear(180).withYear(newVal).with(WEEK_OF_WEEK_BASED_YEAR, week);
                 return (R) date.with(date);
             }
-            @Override
-            public boolean resolve(DateTimeBuilder builder, long value) {
-                Long[] values = builder.queryFieldValues(WEEK_BASED_YEAR, WEEK_OF_WEEK_BASED_YEAR, DAY_OF_WEEK);
-                if (values[0] != null && values[1] != null && values[2] != null) {
-                    int wby = WEEK_BASED_YEAR.range().checkValidIntValue(values[0], WEEK_BASED_YEAR);
-                    int week = WEEK_OF_WEEK_BASED_YEAR.range().checkValidIntValue(values[1], WEEK_OF_WEEK_BASED_YEAR);
-                    int dow = DAY_OF_WEEK.range().checkValidIntValue(values[2], DAY_OF_WEEK);
-                    LocalDate date = LocalDate.of(wby, 2, 1).with(WEEK_OF_WEEK_BASED_YEAR, week).with(DAY_OF_WEEK, dow);
-                    builder.addFieldValue(EPOCH_DAY, date.toEpochDay());
-                    builder.removeFieldValues(WEEK_BASED_YEAR, WEEK_OF_WEEK_BASED_YEAR, DAY_OF_WEEK);
-                }
-                return false;
-            }
         };
 
         @Override
-        public ValueRange doRange(TemporalAccessor temporal) {
+        public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
             return range();
-        }
-
-        @Override
-        public boolean resolve(DateTimeBuilder builder, long value) {
-            return false;
         }
 
         @Override
@@ -429,6 +450,10 @@ public final class ISOFields {
 
         //-------------------------------------------------------------------------
         private static final int[] QUARTER_DAYS = {0, 90, 181, 273, 0, 91, 182, 274};
+
+        private static boolean isIso(TemporalAccessor temporal) {
+            return Chronology.from(temporal).equals(IsoChronology.INSTANCE);
+        }
 
         private static ValueRange getWeekRange(LocalDate date) {
             int wby = getWeekBasedYear(date);
@@ -520,36 +545,34 @@ public final class ISOFields {
         }
 
         @Override
-        public boolean isSupported(Temporal temporal) {
+        public boolean isSupportedBy(Temporal temporal) {
             return temporal.isSupported(EPOCH_DAY);
         }
 
+        @SuppressWarnings("unchecked")
         @Override
-        public <R extends Temporal> R doPlus(R dateTime, long periodToAdd) {
+        public <R extends Temporal> R addTo(R temporal, long amount) {
             switch(this) {
                 case WEEK_BASED_YEARS:
-                    return (R) dateTime.with(WEEK_BASED_YEAR,
-                            Math.addExact(dateTime.get(WEEK_BASED_YEAR), periodToAdd));
+                    return (R) temporal.with(WEEK_BASED_YEAR,
+                            Math.addExact(temporal.get(WEEK_BASED_YEAR), amount));
                 case QUARTER_YEARS:
                     // no overflow (256 is multiple of 4)
-                    return (R) dateTime.plus(periodToAdd / 256, YEARS)
-                            .plus((periodToAdd % 256) * 3, MONTHS);
+                    return (R) temporal.plus(amount / 256, YEARS)
+                            .plus((amount % 256) * 3, MONTHS);
                 default:
                     throw new IllegalStateException("Unreachable");
             }
         }
 
         @Override
-        public <R extends Temporal> SimplePeriod between(R dateTime1, R dateTime2) {
+        public long between(Temporal temporal1, Temporal temporal2) {
             switch(this) {
                 case WEEK_BASED_YEARS:
-                    long period = Math.subtractExact(dateTime2.getLong(WEEK_BASED_YEAR),
-                            dateTime1.getLong(WEEK_BASED_YEAR));
-                    return new SimplePeriod(period, WEEK_BASED_YEARS);
+                    return Math.subtractExact(temporal2.getLong(WEEK_BASED_YEAR),
+                            temporal1.getLong(WEEK_BASED_YEAR));
                 case QUARTER_YEARS:
-                    long period2 = Math.subtractExact(dateTime2.getLong(QUARTER_OF_YEAR),
-                            dateTime1.getLong(QUARTER_OF_YEAR));
-                    return new SimplePeriod(period2, QUARTER_YEARS);
+                    return temporal1.periodUntil(temporal2, MONTHS) / 3;
                 default:
                     throw new IllegalStateException("Unreachable");
             }

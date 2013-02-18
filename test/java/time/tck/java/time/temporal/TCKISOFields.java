@@ -56,9 +56,6 @@
  */
 package tck.java.time.temporal;
 
-import java.time.format.DateTimeBuilder;
-import java.time.temporal.*;
-
 import static java.time.DayOfWeek.FRIDAY;
 import static java.time.DayOfWeek.MONDAY;
 import static java.time.DayOfWeek.SATURDAY;
@@ -69,10 +66,13 @@ import static java.time.DayOfWeek.WEDNESDAY;
 import static java.time.temporal.ChronoField.DAY_OF_WEEK;
 import static java.time.temporal.ChronoField.YEAR;
 import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertTrue;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.IsoFields;
+import java.time.temporal.ValueRange;
 
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -81,7 +81,7 @@ import org.testng.annotations.Test;
  * Test.
  */
 @Test(groups={"tck"})
-public class TCKISOFields {
+public class TCKIsoFields {
 
     @DataProvider(name="quarter")
     Object[][] data_quarter() {
@@ -117,8 +117,8 @@ public class TCKISOFields {
     //-----------------------------------------------------------------------
     @Test(dataProvider="quarter")
     public void test_DOQ(LocalDate date, int doq, int qoy) {
-        assertEquals(ISOFields.DAY_OF_QUARTER.doGet(date), doq);
-        assertEquals(date.get(ISOFields.DAY_OF_QUARTER), doq);
+        assertEquals(IsoFields.DAY_OF_QUARTER.getFrom(date), doq);
+        assertEquals(date.get(IsoFields.DAY_OF_QUARTER), doq);
     }
 
     //-----------------------------------------------------------------------
@@ -126,21 +126,61 @@ public class TCKISOFields {
     //-----------------------------------------------------------------------
     @Test(dataProvider="quarter")
     public void test_QOY(LocalDate date, int doq, int qoy) {
-        assertEquals(ISOFields.QUARTER_OF_YEAR.doGet(date), qoy);
-        assertEquals(date.get(ISOFields.QUARTER_OF_YEAR), qoy);
+        assertEquals(IsoFields.QUARTER_OF_YEAR.getFrom(date), qoy);
+        assertEquals(date.get(IsoFields.QUARTER_OF_YEAR), qoy);
     }
 
     //-----------------------------------------------------------------------
-    // builder
+    // parse quarters
     //-----------------------------------------------------------------------
     @Test(dataProvider="quarter")
-    public void test_builder_quarters(LocalDate date, int doq, int qoy) {
-        DateTimeBuilder builder = new DateTimeBuilder();
-        builder.addFieldValue(ISOFields.DAY_OF_QUARTER, doq);
-        builder.addFieldValue(ISOFields.QUARTER_OF_YEAR, qoy);
-        builder.addFieldValue(YEAR, date.getYear());
-        builder.resolve();
-        assertEquals(builder.query(LocalDate::from), date);
+    public void test_parse_quarters(LocalDate date, int doq, int qoy) {
+        DateTimeFormatter f = new DateTimeFormatterBuilder()
+                .appendValue(YEAR).appendLiteral('-')
+                .appendValue(IsoFields.QUARTER_OF_YEAR).appendLiteral('-')
+                .appendValue(IsoFields.DAY_OF_QUARTER).toFormatter();
+        LocalDate parsed = LocalDate.parse(date.getYear() + "-" + qoy + "-" + doq, f);
+        assertEquals(parsed, date);
+    }
+
+    //-----------------------------------------------------------------------
+    // quarters between
+    //-----------------------------------------------------------------------
+    @DataProvider(name="quartersBetween")
+    Object[][] data_quartersBetween() {
+        return new Object[][] {
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 1, 1), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 1, 2), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 2, 1), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 3, 1), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 3, 31), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 4, 1), 1},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 4, 2), 1},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 6, 30), 1},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 7, 1), 2},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 10, 1), 3},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2000, 12, 31), 3},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2001, 1, 1), 4},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(2002, 1, 1), 8},
+
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 12, 31), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 10, 2), 0},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 10, 1), -1},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 7, 2), -1},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 7, 1), -2},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 4, 2), -2},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 4, 1), -3},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 1, 2), -3},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1999, 1, 1), -4},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1998, 12, 31), -4},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1998, 10, 2), -4},
+                {LocalDate.of(2000, 1, 1), LocalDate.of(1998, 10, 1), -5},
+        };
+    }
+
+    @Test(dataProvider="quartersBetween")
+    public void test_quarters_between(LocalDate start, LocalDate end, long expected) {
+        assertEquals(IsoFields.QUARTER_YEARS.between(start, end), expected);
     }
 
     //-----------------------------------------------------------------------
@@ -170,8 +210,8 @@ public class TCKISOFields {
     @Test(dataProvider="week")
     public void test_WOWBY(LocalDate date, DayOfWeek dow, int week, int wby) {
         assertEquals(date.getDayOfWeek(), dow);
-        assertEquals(ISOFields.WEEK_OF_WEEK_BASED_YEAR.doGet(date), week);
-        assertEquals(date.get(ISOFields.WEEK_OF_WEEK_BASED_YEAR), week);
+        assertEquals(IsoFields.WEEK_OF_WEEK_BASED_YEAR.getFrom(date), week);
+        assertEquals(date.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR), week);
     }
 
     //-----------------------------------------------------------------------
@@ -180,21 +220,21 @@ public class TCKISOFields {
     @Test(dataProvider="week")
     public void test_WBY(LocalDate date, DayOfWeek dow, int week, int wby) {
         assertEquals(date.getDayOfWeek(), dow);
-        assertEquals(ISOFields.WEEK_BASED_YEAR.doGet(date), wby);
-        assertEquals(date.get(ISOFields.WEEK_BASED_YEAR), wby);
+        assertEquals(IsoFields.WEEK_BASED_YEAR.getFrom(date), wby);
+        assertEquals(date.get(IsoFields.WEEK_BASED_YEAR), wby);
     }
 
     //-----------------------------------------------------------------------
-    // builder
+    // parse weeks
     //-----------------------------------------------------------------------
     @Test(dataProvider="week")
-    public void test_builder_weeks(LocalDate date, DayOfWeek dow, int week, int wby) {
-        DateTimeBuilder builder = new DateTimeBuilder();
-        builder.addFieldValue(ISOFields.WEEK_BASED_YEAR, wby);
-        builder.addFieldValue(ISOFields.WEEK_OF_WEEK_BASED_YEAR, week);
-        builder.addFieldValue(DAY_OF_WEEK, dow.getValue());
-        builder.resolve();
-        assertEquals(builder.query(LocalDate::from), date);
+    public void test_parse_weeks(LocalDate date, DayOfWeek dow, int week, int wby) {
+        DateTimeFormatter f = new DateTimeFormatterBuilder()
+                .appendValue(IsoFields.WEEK_BASED_YEAR).appendLiteral('-')
+                .appendValue(IsoFields.WEEK_OF_WEEK_BASED_YEAR).appendLiteral('-')
+                .appendValue(DAY_OF_WEEK).toFormatter();
+        LocalDate parsed = LocalDate.parse(wby + "-" + week + "-" + dow.getValue(), f);
+        assertEquals(parsed, date);
     }
 
     //-----------------------------------------------------------------------
@@ -220,11 +260,11 @@ public class TCKISOFields {
                     wby++;
                 }
             }
-            assertEquals(ISOFields.WEEK_OF_WEEK_BASED_YEAR.doRange(date), ValueRange.of(1, weekLen), "Failed on " + date + " " + date.getDayOfWeek());
-            assertEquals(ISOFields.WEEK_OF_WEEK_BASED_YEAR.doGet(date), week, "Failed on " + date + " " + date.getDayOfWeek());
-            assertEquals(date.get(ISOFields.WEEK_OF_WEEK_BASED_YEAR), week, "Failed on " + date + " " + date.getDayOfWeek());
-            assertEquals(ISOFields.WEEK_BASED_YEAR.doGet(date), wby, "Failed on " + date + " " + date.getDayOfWeek());
-            assertEquals(date.get(ISOFields.WEEK_BASED_YEAR), wby, "Failed on " + date + " " + date.getDayOfWeek());
+            assertEquals(IsoFields.WEEK_OF_WEEK_BASED_YEAR.rangeRefinedBy(date), ValueRange.of(1, weekLen), "Failed on " + date + " " + date.getDayOfWeek());
+            assertEquals(IsoFields.WEEK_OF_WEEK_BASED_YEAR.getFrom(date), week, "Failed on " + date + " " + date.getDayOfWeek());
+            assertEquals(date.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR), week, "Failed on " + date + " " + date.getDayOfWeek());
+            assertEquals(IsoFields.WEEK_BASED_YEAR.getFrom(date), wby, "Failed on " + date + " " + date.getDayOfWeek());
+            assertEquals(date.get(IsoFields.WEEK_BASED_YEAR), wby, "Failed on " + date + " " + date.getDayOfWeek());
             date = date.plusDays(1);
         }
     }
